@@ -396,16 +396,22 @@ class ZaloOABot(HangLuot):
         tok, cr, err = await KEEPER.access_token(self.account_id, self._raw, client=client, force=force)
         if cr.get("oa_id"):
             self.oa_id = cr["oa_id"]
-        return tok, err
+        return tok, cr, err
 
     async def _call(self, client, method, path, *, json_body=None, params=None, files=None, retry=True):
         """One OpenAPI call with a fresh access token. A token Zalo calls invalid (-216, -124) is
         refreshed once and the call repeated."""
-        tok, err = await self._token(client)
+        tok, cr, err = await self._token(client)
         if not tok:
             return {"ok": False, "error": err}
+        headers = {"access_token": tok}
+        app_secret = cr.get("app_secret")
+        if app_secret:
+            headers["appsecret_proof"] = hmac.new(
+                app_secret.encode(), tok.encode(), hashlib.sha256
+            ).hexdigest()
         try:
-            r = await client.request(method, f"{OPENAPI}{path}", headers={"access_token": tok},
+            r = await client.request(method, f"{OPENAPI}{path}", headers=headers,
                                      json=json_body, params=params, files=files)
             try:
                 d = r.json() or {}
@@ -419,7 +425,7 @@ class ZaloOABot(HangLuot):
         except Exception:
             code = -1
         if code in (-216, -124) and retry:
-            tok, err = await self._token(client, force=True)
+            tok, _, err = await self._token(client, force=True)
             if not tok:
                 return {"ok": False, "code": code, "error": err}
             return await self._call(client, method, path, json_body=json_body, params=params, files=files,
@@ -783,7 +789,7 @@ class ZaloOABot(HangLuot):
                 await asyncio.sleep(max(60.0, min(left, 3600.0)))
                 if self._stop:
                     break
-                tok, err = await self._token()
+                tok, _, err = await self._token()
                 if not tok:
                     # Keep listening: an access token that still works carries replies until it
                     # expires, and the owner sees why on the bot card.

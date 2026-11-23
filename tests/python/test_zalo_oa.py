@@ -81,6 +81,9 @@ async def zalo(req):
     tok = req.headers.get("access_token", "")
     if tok != state["access"] or tok in state["bad_access"]:
         return httpx.Response(200, json={"error": -216, "message": "Access token is invalid"})
+    proof = hmac.new(APP_SECRET.encode(), tok.encode(), hashlib.sha256).hexdigest()
+    if req.headers.get("appsecret_proof") != proof:
+        return httpx.Response(200, json={"error": -242, "message": "Invalid appsecret_proof"})
     if req.url.path == "/v2.0/oa/getoa":
         return httpx.Response(200, json={"error": 0, "data": {"oa_id": OA_ID, "name": "Nước mắm Cô Ba"}})
     if req.url.path == "/v3.0/oa/user/detail":
